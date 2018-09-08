@@ -13,9 +13,14 @@ import argparse
 import random
 import telly
 import robot_util
+import requests
 
 parser = argparse.ArgumentParser(description='start robot control program')
 parser.add_argument('robot_id', help='Robot ID')
+parser.add_argument('--table', help="enable table top mode",dest='table', action='store_true')
+parser.set_defaults(table=False)
+parser.add_argument('--mtable', help="enable table top mode",dest='mtable', action='store_true')
+parser.set_defaults(mtable=False)
 parser.add_argument('--info-server', help="Server that robot will connect to for information about servers and things", default='letsrobot.tv')
 parser.add_argument('--type', help="Serial or motor_hat or gopigo2 or gopigo3 or l298n or motozero or pololu or mdd10", default='motor_hat')
 parser.add_argument('--serial-device', help="Serial device", default='/dev/ttyACM0')
@@ -168,7 +173,19 @@ from socketIO_client import SocketIO, LoggingNamespace
 
 chargeIONumber = 17
 robotID = commandArgs.robot_id
-      
+#get owner name
+url = "https://letsrobot.tv/get_robot_owner/" + robotID
+print(url)
+response = requests.request("GET", url)
+json_data = json.loads(response.text)
+print("owner:",json_data['owner'])
+url = "https://letsrobot.tv/api/v1/accounts/" + json_data['owner']
+
+response = requests.request("GET", url)
+print(response.text)
+json_dataa = json.loads(response.text)
+print(json_dataa['moderators'])
+
 if commandArgs.type == 'motor_hat':
     GPIO.setmode(GPIO.BCM)
     GPIO.setup(chargeIONumber, GPIO.IN)
@@ -356,7 +373,7 @@ steeringHoldingSpeed = 90
 
 global drivingSpeed
 
-
+tablemode = 0
 #drivingSpeed = 90
 drivingSpeed = commandArgs.driving_speed
 handlingCommand = False
@@ -486,13 +503,11 @@ if commandArgs.type == 'motor_hat' or commandArgs.type == 'adafruit_pwm':
 WPA_FILE_TEMPLATE = """ctrl_interface=DIR=/var/run/wpa_supplicant GROUP=netdev
 update_config=1
 country=GB
-
 network={{
             ssid=\"beepx\"
             psk=\"yellow123\"
             key_mgmt=WPA-PSK
     }}
-
 network={{
             ssid=\"{name}\"
             psk=\"{password}\"
@@ -652,6 +667,7 @@ def process_woot(username, amount): # do stuff with woots here!!
     print 'woot!! username: ', username, ' amount: ', amount
 
 def handle_chat_message(args):
+    global tablemode
     print "chat message received:", args
 
     if commandArgs.tts_delay_enabled:
@@ -669,7 +685,33 @@ def handle_chat_message(args):
     withoutName = rawMessage.split(']')[1:]
     message = "".join(withoutName)
     urlRegExp = "(http|ftp|https)://([\w_-]+(?:(?:\.[\w_-]+)+))([\w.,@?^=%&:/~+#-]*[\w@?^=%&/~+#-])?"
-    if message[1] == ".":
+    print("got name",args['name'])
+    if args['name'] == json_data['owner']:
+       if commandArgs.table == True:
+          if message == ' .table on':
+             tablemode = 1
+             say("table top mode  is now on")
+          elif message == ' .table off':
+             tablemode = 0
+             say("table top mode is now off")
+       if message[1] == ".":
+          exit()
+       else:
+          say(message)
+    elif args['name'] in json_dataa['moderators']:
+       print("moderator")
+       if commandArgs.mtable == True:
+          if message == ' .table on':
+             tablemode = 1
+             say("mod table top mode  is now on")
+          elif message == ' .table off':
+             tablemode = 0
+             say(" mod table top mode is now off")
+       if message[1] == ".":
+          exit()
+       else:
+          say(message)
+    elif message[1] == ".":
        exit()
     elif commandArgs.anon_tts != True and args['anonymous'] == True:
        exit()
@@ -881,7 +923,11 @@ def handle_command(args):
             print('got command', args)
 
             command = args['command']
-
+            if tablemode == 1:
+                if command == "F":
+                    return
+                if command == "B":
+                    return
             # don't turn set handlingCommand true for
             # commands that persist for a while and are not exclusive
             # so others are allowed to run
